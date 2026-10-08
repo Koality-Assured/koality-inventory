@@ -37,7 +37,12 @@ export async function bootLocal(options: BootOptions): Promise<Booted> {
   if (dev.enabled) {
     await seedDevUsers(opened.db);
   }
-  const app = createApp({ db: opened.db, devAuth: dev.enabled, sessionSecret });
+  const app = createApp({
+    db: opened.db,
+    client: opened.client,
+    devAuth: dev.enabled,
+    sessionSecret,
+  });
   const requestedPort = options.port ?? (options.env.PORT ? Number(options.env.PORT) : 3000);
   const server = serve({
     fetch: app.fetch,

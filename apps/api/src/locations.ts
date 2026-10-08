@@ -132,8 +132,12 @@ export async function createLocation(db: SqliteDb, orgId: string, input: Locatio
 }
 
 export async function locationTree(db: SqliteDb, orgId: string) {
-  const facilityRows = await listFacilities(db, orgId);
-  const locationRows = await db.select().from(locations).where(eq(locations.orgId, orgId));
+  const facilityRows = (await listFacilities(db, orgId)).filter(
+    (facility) => facility.code !== "__external",
+  );
+  const locationRows = (await db.select().from(locations).where(eq(locations.orgId, orgId))).filter(
+    (row) => !row.code.startsWith("__"),
+  );
   return facilityRows.map((facility) => ({
     id: facility.id,
     name: facility.name,

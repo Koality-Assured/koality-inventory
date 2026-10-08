@@ -99,7 +99,7 @@ describe("dual-dialect foundation migrations", () => {
         .get() as {
         count: number;
       };
-      expect(rows.count).toBe(3);
+      expect(rows.count).toBe(4);
     } finally {
       opened.close();
     }

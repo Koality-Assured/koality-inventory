@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 
 import { type OpenedSqlite } from "@koality-inventory/db";
+import type { DatabaseSync } from "node:sqlite";
 import { sessions, users } from "@koality-inventory/db/sqlite";
 import { createRawUlid } from "@koality-inventory/ids";
 
@@ -11,12 +12,21 @@ import { createItem, createSku, getItem, listItems, listSkus } from "./catalog.j
 import { HttpError } from "./http.js";
 import { createFacility, createLocation, listFacilities, locationTree } from "./locations.js";
 import { verifyPassword } from "./passwords.js";
+import {
+  adjustStock,
+  receiveStock,
+  receiveTransfer,
+  stockPosition,
+  stockValuation,
+  transferStock,
+} from "./stock.js";
 import { signAccessToken, verifyAccessToken } from "./tokens.js";
 
 type SqliteDb = OpenedSqlite["db"];
 
 interface AppDeps {
   db: SqliteDb;
+  client: DatabaseSync;
   devAuth: boolean;
   sessionSecret: string;
 }
@@ -56,6 +66,34 @@ const facilitySchema = z.object({
     .min(1)
     .max(40)
     .regex(/^[A-Za-z0-9_-]+$/),
+});
+
+const receiptSchema = z.object({
+  skuId: z.string().min(1),
+  locationId: z.string().min(1),
+  quantity: z.number().int().positive(),
+  unitCostCents: z.number().int().nonnegative(),
+  lotCode: z.string().min(1).optional(),
+  expiresOn: z.string().nullable().optional(),
+  serialCodes: z.array(z.string().min(1)).optional(),
+});
+
+const adjustmentSchema = z.object({
+  skuId: z.string().min(1),
+  locationId: z.string().min(1),
+  quantityDelta: z
+    .number()
+    .int()
+    .refine((value) => value !== 0),
+  unitCostCents: z.number().int().nonnegative().optional(),
+  reason: z.string().trim().min(1).max(500),
+});
+
+const transferSchema = z.object({
+  skuId: z.string().min(1),
+  fromLocationId: z.string().min(1),
+  toLocationId: z.string().min(1),
+  quantity: z.number().int().positive(),
 });
 
 const locationSchema = z.object({
@@ -234,6 +272,67 @@ export function createApp(deps: AppDeps) {
     }
     const location = await createLocation(deps.db, auth.orgId, c.req.valid("json"));
     return c.json({ location }, 201);
+  });
+
+  app.get("/api/v1/stock/balances", async (c) => {
+    const auth = await authenticate(c, deps);
+    if (auth instanceof Response) {
+      return auth;
+    }
+    const skuId = c.req.query("skuId");
+    if (!skuId) {
+      return c.json({ error: "skuId is required" }, 400);
+    }
+    return c.json({ balance: stockPosition(deps.client, auth.orgId, skuId) });
+  });
+
+  app.get("/api/v1/stock/valuation", async (c) => {
+    const auth = await authenticate(c, deps);
+    if (auth instanceof Response) {
+      return auth;
+    }
+    const skuId = c.req.query("skuId");
+    if (!skuId) {
+      return c.json({ error: "skuId is required" }, 400);
+    }
+    return c.json({ valuation: stockValuation(deps.client, auth.orgId, skuId) });
+  });
+
+  app.post("/api/v1/stock/receipts", zValidator("json", receiptSchema), async (c) => {
+    const auth = await authenticate(c, deps);
+    if (auth instanceof Response) {
+      return auth;
+    }
+    const receipt = receiveStock(deps.client, { orgId: auth.orgId, ...c.req.valid("json") });
+    return c.json(receipt, 201);
+  });
+
+  app.post("/api/v1/stock/adjustments", zValidator("json", adjustmentSchema), async (c) => {
+    const auth = await authenticate(c, deps);
+    if (auth instanceof Response) {
+      return auth;
+    }
+    const body = c.req.valid("json");
+    const adjustment = adjustStock(deps.client, { orgId: auth.orgId, ...body });
+    return c.json(adjustment, 201);
+  });
+
+  app.post("/api/v1/stock/transfers", zValidator("json", transferSchema), async (c) => {
+    const auth = await authenticate(c, deps);
+    if (auth instanceof Response) {
+      return auth;
+    }
+    const transfer = transferStock(deps.client, { orgId: auth.orgId, ...c.req.valid("json") });
+    return c.json(transfer, 201);
+  });
+
+  app.put("/api/v1/stock/transfers/:id/receive", async (c) => {
+    const auth = await authenticate(c, deps);
+    if (auth instanceof Response) {
+      return auth;
+    }
+    const transfer = receiveTransfer(deps.client, auth.orgId, c.req.param("id"));
+    return c.json(transfer);
   });
 
   app.post("/api/v1/locations/bins", zValidator("json", locationSchema), async (c) => {
