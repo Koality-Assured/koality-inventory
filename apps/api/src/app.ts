@@ -11,6 +11,16 @@ import { createRawUlid } from "@koality-inventory/ids";
 import { createItem, createSku, getItem, listItems, listSkus } from "./catalog.js";
 import { HttpError } from "./http.js";
 import { createFacility, createLocation, listFacilities, locationTree } from "./locations.js";
+import {
+  approvePurchaseOrder,
+  createPurchaseOrder,
+  createVendor,
+  pickerSheet,
+  receivePurchaseOrder,
+  recordCount,
+  reorderRecommendations,
+  startCycleCount,
+} from "./operations.js";
 import { verifyPassword } from "./passwords.js";
 import {
   adjustStock,
@@ -87,6 +97,35 @@ const adjustmentSchema = z.object({
     .refine((value) => value !== 0),
   unitCostCents: z.number().int().nonnegative().optional(),
   reason: z.string().trim().min(1).max(500),
+});
+
+const poSchema = z.object({
+  vendorId: z.string().min(1),
+  lines: z.array(
+    z.object({
+      skuId: z.string().min(1),
+      locationId: z.string().min(1),
+      quantity: z.number().int().positive(),
+      unitCostCents: z.number().int().nonnegative(),
+    }),
+  ),
+});
+
+const receiptAgainstPoSchema = z.object({
+  poId: z.string().min(1),
+  lineId: z.string().min(1),
+  quantity: z.number().int().positive(),
+});
+
+const cycleSchema = z.object({
+  locationId: z.string().min(1),
+  skuIds: z.array(z.string().min(1)).min(1),
+});
+
+const countSchema = z.object({
+  cycleId: z.string().min(1),
+  lineId: z.string().min(1),
+  countedQty: z.number().int().nonnegative(),
 });
 
 const transferSchema = z.object({
@@ -324,6 +363,92 @@ export function createApp(deps: AppDeps) {
     }
     const transfer = transferStock(deps.client, { orgId: auth.orgId, ...c.req.valid("json") });
     return c.json(transfer, 201);
+  });
+
+  app.get("/api/v1/procurement/reorder-recommendations", async (c) => {
+    const auth = await authenticate(c, deps);
+    if (auth instanceof Response) {
+      return auth;
+    }
+    return c.json({ recommendations: reorderRecommendations(deps.client, auth.orgId) });
+  });
+
+  app.post(
+    "/api/v1/procurement/vendors",
+    zValidator("json", z.object({ name: z.string().min(1) })),
+    async (c) => {
+      const auth = await authenticate(c, deps);
+      if (auth instanceof Response) {
+        return auth;
+      }
+      return c.json(
+        { vendor: createVendor(deps.client, auth.orgId, c.req.valid("json").name) },
+        201,
+      );
+    },
+  );
+
+  app.post("/api/v1/procurement/purchase-orders", zValidator("json", poSchema), async (c) => {
+    const auth = await authenticate(c, deps);
+    if (auth instanceof Response) {
+      return auth;
+    }
+    const body = c.req.valid("json");
+    return c.json(
+      createPurchaseOrder(deps.client, {
+        orgId: auth.orgId,
+        vendorId: body.vendorId,
+        lines: body.lines,
+      }),
+      201,
+    );
+  });
+
+  app.post("/api/v1/procurement/purchase-orders/:id/approve", async (c) => {
+    const auth = await authenticate(c, deps);
+    if (auth instanceof Response) {
+      return auth;
+    }
+    return c.json(approvePurchaseOrder(deps.client, auth.orgId, c.req.param("id")));
+  });
+
+  app.post(
+    "/api/v1/procurement/receipts",
+    zValidator("json", receiptAgainstPoSchema),
+    async (c) => {
+      const auth = await authenticate(c, deps);
+      if (auth instanceof Response) {
+        return auth;
+      }
+      const body = c.req.valid("json");
+      return c.json(receivePurchaseOrder(deps.client, { orgId: auth.orgId, ...body }), 201);
+    },
+  );
+
+  app.post("/api/v1/cycle-counts", zValidator("json", cycleSchema), async (c) => {
+    const auth = await authenticate(c, deps);
+    if (auth instanceof Response) {
+      return auth;
+    }
+    const body = c.req.valid("json");
+    return c.json(startCycleCount(deps.client, { orgId: auth.orgId, ...body }), 201);
+  });
+
+  app.get("/api/v1/cycle-counts/:id", async (c) => {
+    const auth = await authenticate(c, deps);
+    if (auth instanceof Response) {
+      return auth;
+    }
+    return c.json(pickerSheet(deps.client, auth.orgId, c.req.param("id")));
+  });
+
+  app.post("/api/v1/cycle-counts/record", zValidator("json", countSchema), async (c) => {
+    const auth = await authenticate(c, deps);
+    if (auth instanceof Response) {
+      return auth;
+    }
+    const body = c.req.valid("json");
+    return c.json(recordCount(deps.client, { orgId: auth.orgId, ...body }));
   });
 
   app.put("/api/v1/stock/transfers/:id/receive", async (c) => {

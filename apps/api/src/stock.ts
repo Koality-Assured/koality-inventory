@@ -341,6 +341,90 @@ export function receiveTransfer(client: DatabaseSync, orgId: string, transferId:
   });
 }
 
+export function changeIncoming(
+  client: DatabaseSync,
+  input: { orgId: string; skuId: string; locationId: string; delta: number; refId: string },
+) {
+  if (!Number.isInteger(input.delta) || input.delta === 0) {
+    throw new HttpError(400, "incoming delta must be a non-zero integer");
+  }
+  return transaction(client, () => {
+    const system = ensureSystem(client, input.orgId);
+    const quantity = Math.abs(input.delta);
+    const now = new Date().toISOString();
+    const increase = input.delta > 0;
+    post(client, {
+      orgId: input.orgId,
+      skuId: input.skuId,
+      locationId: input.locationId,
+      bucket: "incoming",
+      direction: increase ? "debit" : "credit",
+      quantity,
+      unitCostCents: 0,
+      refType: "incoming",
+      refId: input.refId,
+      lotId: null,
+      now,
+    });
+    post(client, {
+      orgId: input.orgId,
+      skuId: input.skuId,
+      locationId: system.supplierLocationId,
+      bucket: "incoming",
+      direction: increase ? "credit" : "debit",
+      quantity,
+      unitCostCents: 0,
+      refType: "incoming",
+      refId: input.refId,
+      lotId: null,
+      now,
+    });
+    return position(client, input.orgId, input.skuId);
+  });
+}
+
+export function changeAllocated(
+  client: DatabaseSync,
+  input: { orgId: string; skuId: string; locationId: string; delta: number; refId: string },
+) {
+  if (!Number.isInteger(input.delta) || input.delta === 0) {
+    throw new HttpError(400, "allocated delta must be a non-zero integer");
+  }
+  return transaction(client, () => {
+    const system = ensureSystem(client, input.orgId);
+    const quantity = Math.abs(input.delta);
+    const now = new Date().toISOString();
+    const increase = input.delta > 0;
+    post(client, {
+      orgId: input.orgId,
+      skuId: input.skuId,
+      locationId: input.locationId,
+      bucket: "allocated",
+      direction: increase ? "debit" : "credit",
+      quantity,
+      unitCostCents: 0,
+      refType: "allocation",
+      refId: input.refId,
+      lotId: null,
+      now,
+    });
+    post(client, {
+      orgId: input.orgId,
+      skuId: input.skuId,
+      locationId: system.adjustmentLocationId,
+      bucket: "allocated",
+      direction: increase ? "credit" : "debit",
+      quantity,
+      unitCostCents: 0,
+      refType: "allocation",
+      refId: input.refId,
+      lotId: null,
+      now,
+    });
+    return position(client, input.orgId, input.skuId);
+  });
+}
+
 export function stockPosition(client: DatabaseSync, orgId: string, skuId: string): StockPosition {
   return position(client, orgId, skuId);
 }
