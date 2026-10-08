@@ -1,0 +1,4 @@
+{
+  "files": [],
+  "references": [{ "path": "packages/ids" }, { "path": "packages/db" }]
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@koality-inventory/db",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.3.15",
+    "@koality-inventory/ids": "0.1.0",
+    "drizzle-orm": "^0.45.4"
+  }
+}
