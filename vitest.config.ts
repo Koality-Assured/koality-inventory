@@ -8,6 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@koality-inventory/ids": `${root}packages/ids/src/index.ts`,
+      "@koality-inventory/db/sqlite": `${root}packages/db/src/sqlite/schema.ts`,
       "@koality-inventory/db": `${root}packages/db/src/index.ts`,
     },
   },

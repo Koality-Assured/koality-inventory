@@ -3,8 +3,8 @@ import { DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { PGlite } from "@electric-sql/pglite";
-import { drizzle as drizzlePg } from "drizzle-orm/pglite";
+import type { PGlite } from "@electric-sql/pglite";
+import type { PgliteDatabase } from "drizzle-orm/pglite";
 import { drizzle as drizzleSqlite } from "drizzle-orm/sqlite-proxy";
 
 import { postgresSchema } from "./postgres/schema.js";
@@ -22,7 +22,7 @@ export interface OpenedSqlite {
 export interface OpenedPostgres {
   dialect: "postgres";
   client: PGlite;
-  db: ReturnType<typeof drizzlePg<typeof postgresSchema>>;
+  db: PgliteDatabase<typeof postgresSchema>;
   close: () => Promise<void>;
 }
 
@@ -39,12 +39,14 @@ export function openSqlite(filename = ":memory:"): OpenedSqlite {
 }
 
 export async function openPostgres(): Promise<OpenedPostgres> {
-  const client = new PGlite();
+  const { PGlite: PGliteClient } = await import("@electric-sql/pglite");
+  const { drizzle } = await import("drizzle-orm/pglite");
+  const client = new PGliteClient();
   await applyPostgresMigrations(client);
   return {
     dialect: "postgres",
     client,
-    db: drizzlePg(client, { schema: postgresSchema }),
+    db: drizzle(client, { schema: postgresSchema }),
     close: () => client.close(),
   };
 }
@@ -75,7 +77,9 @@ export function applySqliteMigrations(client: DatabaseSync): void {
   }
 }
 
-export async function applyPostgresMigrations(client: PGlite): Promise<void> {
+export async function applyPostgresMigrations(
+  client: Pick<PGlite, "exec" | "query">,
+): Promise<void> {
   await client.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
     id TEXT PRIMARY KEY,
     applied_at TEXT NOT NULL

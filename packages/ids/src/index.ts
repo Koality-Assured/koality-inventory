@@ -49,6 +49,11 @@ export function createIdGenerator(now: () => number = Date.now): IdGenerator {
 }
 
 const defaultGenerator = createIdGenerator();
+const rawUlid = monotonicFactory();
+
+export function createRawUlid(): string {
+  return rawUlid().toLowerCase();
+}
 
 export function createId(prefix: EntityPrefix): string {
   return defaultGenerator(prefix);

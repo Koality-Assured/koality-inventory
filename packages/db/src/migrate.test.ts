@@ -7,7 +7,15 @@ import { openPostgres, openSqlite } from "./migrate.js";
 import { organizations as pgOrganizations, items as pgItems } from "./postgres/schema.js";
 import { organizations as sqliteOrganizations, items as sqliteItems } from "./sqlite/schema.js";
 
-const FOUNDATION_TABLES = ["organizations", "users", "facilities", "items", "skus"];
+const FOUNDATION_TABLES = [
+  "organizations",
+  "users",
+  "facilities",
+  "items",
+  "skus",
+  "locations",
+  "sessions",
+];
 
 describe("dual-dialect foundation migrations", () => {
   it("applies the foundation schema on SQLite and round-trips an item master", async () => {
@@ -91,7 +99,7 @@ describe("dual-dialect foundation migrations", () => {
         .get() as {
         count: number;
       };
-      expect(rows.count).toBe(1);
+      expect(rows.count).toBe(3);
     } finally {
       opened.close();
     }

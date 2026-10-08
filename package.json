@@ -13,7 +13,9 @@
   ],
   "scripts": {
     "lint": "eslint .",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc -b && npm run typecheck -w @koality-inventory/web",
+    "dev:api": "npm run dev -w @koality-inventory/api",
+    "dev:web": "npm run dev -w @koality-inventory/web",
     "test": "vitest run",
     "format:check": "prettier --check .",
     "format": "prettier --write ."
@@ -27,8 +29,5 @@
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.44.0",
     "vitest": "^5.0.3"
-  },
-  "dependencies": {
-    "drizzle-orm": "^0.45.4"
   }
 }

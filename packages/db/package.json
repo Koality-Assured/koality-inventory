@@ -6,6 +6,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./sqlite": {
+      "types": "./dist/sqlite/schema.d.ts",
+      "default": "./dist/sqlite/schema.js"
     }
   },
   "scripts": {

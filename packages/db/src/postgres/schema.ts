@@ -88,4 +88,52 @@ export const skus = pgTable(
   ],
 );
 
-export const postgresSchema = { organizations, users, facilities, items, skus };
+export const locations = pgTable(
+  "locations",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    facilityId: text("facility_id")
+      .notNull()
+      .references(() => facilities.id),
+    parentId: text("parent_id"),
+    kind: text("kind").notNull(),
+    name: text("name").notNull(),
+    code: text("code").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    index("idx_locations_org").on(table.orgId),
+    index("idx_locations_facility").on(table.facilityId),
+    index("idx_locations_parent").on(table.parentId),
+  ],
+);
+
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id),
+    expiresAt: text("expires_at").notNull(),
+    revokedAt: text("revoked_at"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [index("idx_sessions_user").on(table.userId)],
+);
+
+export const postgresSchema = {
+  organizations,
+  users,
+  facilities,
+  items,
+  skus,
+  locations,
+  sessions,
+};
