@@ -10,16 +10,22 @@ import { createRawUlid } from "@koality-inventory/ids";
 
 import { createItem, createSku, getItem, listItems, listSkus } from "./catalog.js";
 import { HttpError } from "./http.js";
+import { locationBalance } from "./location-balance.js";
 import { createFacility, createLocation, listFacilities, locationTree } from "./locations.js";
 import {
+  allocateSalesOrder,
   approvePurchaseOrder,
   createPurchaseOrder,
+  createSalesOrder,
   createVendor,
   pickerSheet,
   receivePurchaseOrder,
+  reconcileCycleCount,
   recordCount,
   reorderRecommendations,
+  shipSalesOrder,
   startCycleCount,
+  varianceReport,
 } from "./operations.js";
 import { verifyPassword } from "./passwords.js";
 import {
@@ -126,6 +132,12 @@ const countSchema = z.object({
   cycleId: z.string().min(1),
   lineId: z.string().min(1),
   countedQty: z.number().int().nonnegative(),
+});
+
+const salesOrderSchema = z.object({
+  skuId: z.string().min(1),
+  locationId: z.string().min(1),
+  quantity: z.number().int().positive(),
 });
 
 const transferSchema = z.object({
@@ -322,6 +334,12 @@ export function createApp(deps: AppDeps) {
     if (!skuId) {
       return c.json({ error: "skuId is required" }, 400);
     }
+    const locationId = c.req.query("locationId");
+    if (locationId) {
+      return c.json({
+        balance: locationBalance(deps.client, auth.orgId, skuId, locationId),
+      });
+    }
     return c.json({ balance: stockPosition(deps.client, auth.orgId, skuId) });
   });
 
@@ -449,6 +467,47 @@ export function createApp(deps: AppDeps) {
     }
     const body = c.req.valid("json");
     return c.json(recordCount(deps.client, { orgId: auth.orgId, ...body }));
+  });
+
+  app.get("/api/v1/cycle-counts/:id/variance", async (c) => {
+    const auth = await authenticate(c, deps);
+    if (auth instanceof Response) {
+      return auth;
+    }
+    return c.json(varianceReport(deps.client, auth.orgId, c.req.param("id")));
+  });
+
+  app.post("/api/v1/cycle-counts/:id/reconcile", async (c) => {
+    const auth = await authenticate(c, deps);
+    if (auth instanceof Response) {
+      return auth;
+    }
+    return c.json(reconcileCycleCount(deps.client, auth.orgId, c.req.param("id")));
+  });
+
+  app.post("/api/v1/fulfillment/orders", zValidator("json", salesOrderSchema), async (c) => {
+    const auth = await authenticate(c, deps);
+    if (auth instanceof Response) {
+      return auth;
+    }
+    const body = c.req.valid("json");
+    return c.json(createSalesOrder(deps.client, { orgId: auth.orgId, ...body }), 201);
+  });
+
+  app.post("/api/v1/fulfillment/orders/:id/allocate", async (c) => {
+    const auth = await authenticate(c, deps);
+    if (auth instanceof Response) {
+      return auth;
+    }
+    return c.json(allocateSalesOrder(deps.client, auth.orgId, c.req.param("id")));
+  });
+
+  app.post("/api/v1/fulfillment/orders/:id/ship", async (c) => {
+    const auth = await authenticate(c, deps);
+    if (auth instanceof Response) {
+      return auth;
+    }
+    return c.json(shipSalesOrder(deps.client, auth.orgId, c.req.param("id")));
   });
 
   app.put("/api/v1/stock/transfers/:id/receive", async (c) => {
