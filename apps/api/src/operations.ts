@@ -69,16 +69,24 @@ export function createPurchaseOrder(
     `INSERT INTO purchase_orders (id, org_id, vendor_id, status, created_at) VALUES (?, ?, ?, 'draft', ?)`,
     [poId, input.orgId, input.vendorId, now],
   );
-  for (const line of input.lines) {
+  const lines = input.lines.map((line) => {
+    const lineId = createRawUlid();
     run(
       client,
       `INSERT INTO purchase_order_lines (
         id, po_id, sku_id, location_id, quantity, quantity_received, unit_cost_cents
       ) VALUES (?, ?, ?, ?, ?, 0, ?)`,
-      [createRawUlid(), poId, line.skuId, line.locationId, line.quantity, line.unitCostCents],
+      [lineId, poId, line.skuId, line.locationId, line.quantity, line.unitCostCents],
     );
-  }
-  return { purchaseOrderId: poId, status: "draft" };
+    return {
+      lineId,
+      skuId: line.skuId,
+      locationId: line.locationId,
+      quantity: line.quantity,
+      unitCostCents: line.unitCostCents,
+    };
+  });
+  return { purchaseOrderId: poId, status: "draft" as const, lines };
 }
 
 export function approvePurchaseOrder(client: DatabaseSync, orgId: string, poId: string) {
@@ -86,7 +94,8 @@ export function approvePurchaseOrder(client: DatabaseSync, orgId: string, poId: 
   if (order.status !== "draft") {
     throw new HttpError(409, "Only draft purchase orders can be approved");
   }
-  for (const line of linesOf(client, poId)) {
+  const lines = linesOf(client, poId);
+  for (const line of lines) {
     changeIncoming(client, {
       orgId,
       skuId: line.sku_id,
@@ -96,7 +105,17 @@ export function approvePurchaseOrder(client: DatabaseSync, orgId: string, poId: 
     });
   }
   run(client, `UPDATE purchase_orders SET status = 'approved' WHERE id = ?`, [poId]);
-  return { purchaseOrderId: poId, status: "approved" };
+  return {
+    purchaseOrderId: poId,
+    status: "approved" as const,
+    lines: lines.map((line) => ({
+      lineId: line.id,
+      skuId: line.sku_id,
+      locationId: line.location_id,
+      quantity: line.quantity,
+      unitCostCents: line.unit_cost_cents,
+    })),
+  };
 }
 
 export function receivePurchaseOrder(
