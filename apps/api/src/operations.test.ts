@@ -77,14 +77,17 @@ describe("purchasing and cycle counts", () => {
         vendorId: vendor.id,
         lines: [{ skuId, locationId, quantity: 10, unitCostCents: 500 }],
       });
-      const line = opened.client
-        .prepare("SELECT id FROM purchase_order_lines WHERE po_id = ?")
-        .get(po.purchaseOrderId) as { id: string };
-      approvePurchaseOrder(opened.client, orgId, po.purchaseOrderId);
+      expect(po.lines).toHaveLength(1);
+      const lineId = po.lines[0]?.lineId;
+      if (!lineId) {
+        throw new Error("missing purchase order line");
+      }
+      const approved = approvePurchaseOrder(opened.client, orgId, po.purchaseOrderId);
+      expect(approved.lines[0]?.lineId).toBe(lineId);
       const received = receivePurchaseOrder(opened.client, {
         orgId,
         poId: po.purchaseOrderId,
-        lineId: line.id,
+        lineId,
         quantity: 10,
       });
       expect(received.position.onHand).toBe(10);

@@ -3,6 +3,7 @@ export interface CostLayer {
   unitCostCents: number;
   receivedAt: string;
   expiresOn: string | null;
+  lotId?: string | null;
 }
 
 export interface WacState {

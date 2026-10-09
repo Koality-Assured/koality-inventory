@@ -214,6 +214,9 @@ export function transferStock(
     requireSku(client, input.orgId, input.skuId);
     requireRealLocation(client, input.orgId, input.fromLocationId);
     requireRealLocation(client, input.orgId, input.toLocationId);
+    if (input.fromLocationId === input.toLocationId) {
+      throw new HttpError(400, "Transfer source and destination must differ");
+    }
     requireQty(input.quantity);
     const consumed = takeLayers(
       client,
@@ -323,12 +326,13 @@ export function receiveTransfer(client: DatabaseSync, orgId: string, transferId:
         client,
         `INSERT INTO fifo_layers (
           id, org_id, sku_id, location_id, lot_id, qty_remaining, unit_cost_cents, expires_on, received_at
-        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           createId("stk"),
           orgId,
           transfer.sku_id,
           transfer.to_location_id,
+          layer.lotId ?? null,
           layer.qty,
           layer.unitCostCents,
           layer.expiresOn,
@@ -526,6 +530,7 @@ function takeLayers(
       unitCostCents: layer.unit_cost_cents,
       receivedAt: layer.received_at,
       expiresOn: layer.expires_on,
+      lotId: layer.lot_id,
     })),
     quantity,
   );
@@ -535,6 +540,7 @@ function takeLayers(
   for (const layer of result.remaining) {
     const original = existing.find(
       (row) =>
+        row.lot_id === (layer.lotId ?? null) &&
         row.unit_cost_cents === layer.unitCostCents &&
         row.received_at === layer.receivedAt &&
         row.expires_on === layer.expiresOn,
