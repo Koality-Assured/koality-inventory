@@ -1,9 +1,133 @@
 @import "tailwindcss";
+@import "@fontsource/ibm-plex-sans/latin-400.css";
+@import "@fontsource/ibm-plex-sans/latin-500.css";
+@import "@fontsource/ibm-plex-sans/latin-600.css";
+@import "@fontsource/ibm-plex-mono/latin-400.css";
+
+@theme {
+  --font-sans: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --color-pine: #145c3e;
+  --color-pine-deep: #0c2f24;
+  --color-moss: #e7f3ec;
+  --color-foam: #f3efe6;
+  --color-paper: #fffdf8;
+  --color-ink: #1c1915;
+  --color-muted: #4a453e;
+  --color-line: #e3dcd0;
+  --color-copper: #8a4b12;
+  --color-copper-soft: #fff1df;
+}
 
 body {
   margin: 0;
   min-height: 100vh;
-  background: #f8fafc;
-  color: #0f172a;
-  font-family: "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at top left, rgb(20 92 62 / 8%), transparent 28rem), var(--color-foam);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--color-pine);
+  outline-offset: 2px;
+}
+
+.app-frame {
+  display: grid;
+  min-height: 100vh;
+  grid-template-columns: 16.5rem minmax(0, 1fr);
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  background: var(--color-pine-deep);
+  color: #f6f3ec;
+  padding: 1.25rem;
+}
+
+.workspace {
+  min-width: 0;
+  padding: 1.25rem 1.5rem 2.5rem;
+}
+
+.panel {
+  background: var(--color-paper);
+  border: 1px solid var(--color-line);
+  border-radius: 1rem;
+  box-shadow: 0 1px 0 rgb(28 25 21 / 4%);
+}
+
+.field {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.control {
+  min-height: 2.75rem;
+  width: 100%;
+  border: 1px solid #cfc6b8;
+  border-radius: 0.7rem;
+  background: white;
+  padding: 0.55rem 0.8rem;
+  color: var(--color-ink);
+}
+
+.btn {
+  min-height: 2.75rem;
+  border-radius: 0.7rem;
+  padding: 0.55rem 1rem;
+  font-weight: 600;
+}
+
+.btn-primary {
+  background: var(--color-pine);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #0f4b32;
+}
+
+.btn-quiet {
+  background: transparent;
+  color: #f6f3ec;
+  border: 1px solid rgb(246 243 236 / 35%);
+}
+
+.nav-link {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  border-radius: 0.7rem;
+  padding: 0.55rem 0.8rem;
+  color: #f6f3ec;
+  text-align: left;
+}
+
+.nav-link[aria-current="page"] {
+  background: #f6f3ec;
+  color: var(--color-pine-deep);
+}
+
+@media (max-width: 767px) {
+  .app-frame {
+    grid-template-columns: 1fr;
+  }
+
+  .rail {
+    gap: 1rem;
+  }
 }
