@@ -1,4 +1,14 @@
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 const TOKEN_KEY = "koality-inventory-token";
+const USER_KEY = "koality-inventory-user";
 
 export interface SessionUser {
   id: string;
@@ -43,11 +53,28 @@ export function readToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
 
-export function saveToken(token: string | null): void {
+export function readUser(): SessionUser | null {
+  const raw = localStorage.getItem(USER_KEY);
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw) as SessionUser;
+  } catch {
+    return null;
+  }
+}
+
+export function saveSession(token: string | null, user: SessionUser | null): void {
   if (token) {
     localStorage.setItem(TOKEN_KEY, token);
   } else {
     localStorage.removeItem(TOKEN_KEY);
+  }
+  if (user) {
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+  } else {
+    localStorage.removeItem(USER_KEY);
   }
 }
 
@@ -63,7 +90,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, { ...init, headers });
   if (!response.ok) {
     const payload = (await response.json().catch(() => ({}))) as { error?: string };
-    throw new Error(payload.error ?? `Request failed (${response.status})`);
+    throw new ApiError(payload.error ?? `Request failed (${response.status})`, response.status);
   }
   return (await response.json()) as T;
 }
