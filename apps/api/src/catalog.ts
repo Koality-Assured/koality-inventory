@@ -26,12 +26,25 @@ export interface SkuInput {
 export async function listItems(db: SqliteDb, orgId: string, query?: string) {
   const rows = await db.select().from(items).where(eq(items.orgId, orgId));
   const needle = query?.trim().toLowerCase();
+  const skuRows = needle ? await db.select().from(skus).where(eq(skus.orgId, orgId)) : [];
+  const itemIdsFromSku = new Set(
+    skuRows
+      .filter((sku) => {
+        const barcode = sku.barcode ?? "";
+        return (
+          sku.skuCode.toLowerCase().includes(needle ?? "") ||
+          barcode.toLowerCase().includes(needle ?? "")
+        );
+      })
+      .map((sku) => sku.itemId),
+  );
   const filtered = needle
     ? rows.filter(
         (row) =>
           row.name.toLowerCase().includes(needle) ||
           row.category.toLowerCase().includes(needle) ||
-          row.id.toLowerCase().includes(needle),
+          row.id.toLowerCase().includes(needle) ||
+          itemIdsFromSku.has(row.id),
       )
     : rows;
   return filtered.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
