@@ -1,8 +1,8 @@
+import { getConnInfo } from "@hono/node-server/conninfo";
 import { zValidator } from "@hono/zod-validator";
 import { cors } from "hono/cors";
-import { requirePermissionGuard, rateLimit } from "./rbac.js";
 import { and, eq } from "drizzle-orm";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { z } from "zod";
 
 import { type OpenedSqlite } from "@koality-inventory/db";
@@ -29,7 +29,9 @@ import {
   startCycleCount,
   varianceReport,
 } from "./operations.js";
+import { openApiDocument } from "./openapi.js";
 import { verifyPassword } from "./passwords.js";
+import { authorizationGuard, rateLimit, type AuthEnv } from "./rbac.js";
 import {
   adjustStock,
   receiveStock,
@@ -47,14 +49,13 @@ interface AppDeps {
   client: DatabaseSync;
   devAuth: boolean;
   sessionSecret: string;
+  /** Exact origins allowed for cross-origin browser calls. Empty list denies all. */
+  corsAllowedOrigins?: readonly string[];
+  /** Honour X-Forwarded-For for rate-limit keys (only behind a trusted proxy). */
+  trustProxy?: boolean;
+  loginRateLimit?: { limit: number; windowMs: number };
+  apiRateLimit?: { limit: number; windowMs: number };
 }
-
-type Vars = {
-  userId: string;
-  orgId: string;
-  role: string;
-  sessionId: string;
-};
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -165,21 +166,36 @@ const locationSchema = z.object({
 const DEV_BANNER = "Local development authentication is active.";
 
 export function createApp(deps: AppDeps) {
-  const app = new Hono<{ Variables: Vars }>();
+  const app = new Hono<AuthEnv>();
 
+  const allowedOrigins = new Set(deps.corsAllowedOrigins ?? []);
   app.use(
     "*",
     cors({
-      origin: (origin) => {
-        const allowed = (process.env.CORS_ALLOWED_ORIGINS || "").split(",").filter(Boolean);
-        if (allowed.includes(origin) || process.env.NODE_ENV !== "production") return origin;
-        return null;
-      },
+      origin: (origin) => (allowedOrigins.has(origin) ? origin : null),
+      allowHeaders: ["authorization", "content-type"],
     }),
   );
 
-  app.use("/api/v1/auth/dev-login", rateLimit(5, 60000));
-  app.use("/api/*", rateLimit(1000, 60000));
+  const clientKey = (c: Context): string => {
+    if (deps.trustProxy) {
+      const forwarded = c.req.header("x-forwarded-for")?.split(",")[0]?.trim();
+      if (forwarded) return forwarded;
+    }
+    try {
+      return getConnInfo(c).remote.address ?? "unknown";
+    } catch {
+      return "unknown";
+    }
+  };
+  const login = deps.loginRateLimit ?? { limit: 5, windowMs: 60_000 };
+  const api = deps.apiRateLimit ?? { limit: 600, windowMs: 60_000 };
+  app.use("/api/v1/auth/dev-login", rateLimit({ ...login, key: clientKey }));
+  app.use("/api/*", rateLimit({ ...api, key: clientKey }));
+  app.use(
+    "/api/*",
+    authorizationGuard((c) => authenticate(c, deps)),
+  );
 
   app.onError((error, c) => {
     if (error instanceof HttpError) {
@@ -251,7 +267,7 @@ export function createApp(deps: AppDeps) {
   });
 
   app.post("/api/v1/auth/logout", async (c) => {
-    const auth = await authenticate(c, deps);
+    const auth = c.get("auth");
     await deps.db
       .update(sessions)
       .set({ revokedAt: new Date().toISOString() })
@@ -260,69 +276,59 @@ export function createApp(deps: AppDeps) {
   });
 
   app.get("/api/v1/items", async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "items:read");
+    const auth = c.get("auth");
     const rows = await listItems(deps.db, auth.orgId, c.req.query("q"));
     return c.json({ items: rows });
   });
 
   app.post("/api/v1/items", zValidator("json", itemSchema), async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "items:write");
+    const auth = c.get("auth");
     const created = await createItem(deps.db, auth.orgId, c.req.valid("json"));
     return c.json({ item: created }, 201);
   });
 
   app.get("/api/v1/items/:id", async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "items:read");
+    const auth = c.get("auth");
     const item = await getItem(deps.db, auth.orgId, c.req.param("id"));
     return c.json({ item });
   });
 
   app.get("/api/v1/items/:id/skus", async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "items:read");
+    const auth = c.get("auth");
     const rows = await listSkus(deps.db, auth.orgId, c.req.param("id"));
     return c.json({ skus: rows });
   });
 
   app.post("/api/v1/items/:id/skus", zValidator("json", skuSchema), async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "items:write");
+    const auth = c.get("auth");
     const sku = await createSku(deps.db, auth.orgId, c.req.param("id"), c.req.valid("json"));
     return c.json({ sku }, 201);
   });
 
   app.get("/api/v1/locations/facilities", async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "locations:read");
+    const auth = c.get("auth");
     return c.json({ facilities: await listFacilities(deps.db, auth.orgId) });
   });
 
   app.post("/api/v1/locations/facilities", zValidator("json", facilitySchema), async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "locations:write");
+    const auth = c.get("auth");
     const facility = await createFacility(deps.db, auth.orgId, c.req.valid("json"));
     return c.json({ facility }, 201);
   });
 
   app.get("/api/v1/locations/tree", async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "locations:read");
+    const auth = c.get("auth");
     return c.json({ facilities: await locationTree(deps.db, auth.orgId) });
   });
 
   app.post("/api/v1/locations", zValidator("json", locationSchema), async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "locations:write");
+    const auth = c.get("auth");
     const location = await createLocation(deps.db, auth.orgId, c.req.valid("json"));
     return c.json({ location }, 201);
   });
 
   app.get("/api/v1/stock/balances", async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "stock:read");
+    const auth = c.get("auth");
     const skuId = c.req.query("skuId");
     if (!skuId) {
       return c.json({ error: "skuId is required" }, 400);
@@ -337,8 +343,7 @@ export function createApp(deps: AppDeps) {
   });
 
   app.get("/api/v1/stock/valuation", async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "stock:read");
+    const auth = c.get("auth");
     const skuId = c.req.query("skuId");
     if (!skuId) {
       return c.json({ error: "skuId is required" }, 400);
@@ -347,30 +352,26 @@ export function createApp(deps: AppDeps) {
   });
 
   app.post("/api/v1/stock/receipts", zValidator("json", receiptSchema), async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "stock:write");
+    const auth = c.get("auth");
     const receipt = receiveStock(deps.client, { orgId: auth.orgId, ...c.req.valid("json") });
     return c.json(receipt, 201);
   });
 
   app.post("/api/v1/stock/adjustments", zValidator("json", adjustmentSchema), async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "stock:write");
+    const auth = c.get("auth");
     const body = c.req.valid("json");
     const adjustment = adjustStock(deps.client, { orgId: auth.orgId, ...body });
     return c.json(adjustment, 201);
   });
 
   app.post("/api/v1/stock/transfers", zValidator("json", transferSchema), async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "stock:write");
+    const auth = c.get("auth");
     const transfer = transferStock(deps.client, { orgId: auth.orgId, ...c.req.valid("json") });
     return c.json(transfer, 201);
   });
 
   app.get("/api/v1/procurement/reorder-recommendations", async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "procurement:read");
+    const auth = c.get("auth");
     return c.json({ recommendations: reorderRecommendations(deps.client, auth.orgId) });
   });
 
@@ -378,10 +379,7 @@ export function createApp(deps: AppDeps) {
     "/api/v1/procurement/vendors",
     zValidator("json", z.object({ name: z.string().min(1) })),
     async (c) => {
-      const auth = await authenticate(c, deps);
-      if (auth instanceof Response) {
-        return auth;
-      }
+      const auth = c.get("auth");
       return c.json(
         { vendor: createVendor(deps.client, auth.orgId, c.req.valid("json").name) },
         201,
@@ -390,8 +388,7 @@ export function createApp(deps: AppDeps) {
   );
 
   app.post("/api/v1/procurement/purchase-orders", zValidator("json", poSchema), async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "procurement:write");
+    const auth = c.get("auth");
     const body = c.req.valid("json");
     return c.json(
       createPurchaseOrder(deps.client, {
@@ -404,8 +401,7 @@ export function createApp(deps: AppDeps) {
   });
 
   app.post("/api/v1/procurement/purchase-orders/:id/approve", async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "procurement:write");
+    const auth = c.get("auth");
     return c.json(approvePurchaseOrder(deps.client, auth.orgId, c.req.param("id")));
   });
 
@@ -413,76 +409,63 @@ export function createApp(deps: AppDeps) {
     "/api/v1/procurement/receipts",
     zValidator("json", receiptAgainstPoSchema),
     async (c) => {
-      const auth = await authenticate(c, deps);
-      if (auth instanceof Response) {
-        return auth;
-      }
+      const auth = c.get("auth");
       const body = c.req.valid("json");
       return c.json(receivePurchaseOrder(deps.client, { orgId: auth.orgId, ...body }), 201);
     },
   );
 
   app.post("/api/v1/cycle-counts", zValidator("json", cycleSchema), async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "cycle:write");
+    const auth = c.get("auth");
     const body = c.req.valid("json");
     return c.json(startCycleCount(deps.client, { orgId: auth.orgId, ...body }), 201);
   });
 
   app.get("/api/v1/cycle-counts/:id", async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "cycle:read");
+    const auth = c.get("auth");
     return c.json(pickerSheet(deps.client, auth.orgId, c.req.param("id")));
   });
 
   app.post("/api/v1/cycle-counts/record", zValidator("json", countSchema), async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "cycle:write");
+    const auth = c.get("auth");
     const body = c.req.valid("json");
     return c.json(recordCount(deps.client, { orgId: auth.orgId, ...body }));
   });
 
   app.get("/api/v1/cycle-counts/:id/variance", async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "cycle:read");
+    const auth = c.get("auth");
     return c.json(varianceReport(deps.client, auth.orgId, c.req.param("id")));
   });
 
   app.post("/api/v1/cycle-counts/:id/reconcile", async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "cycle:write");
+    const auth = c.get("auth");
     return c.json(reconcileCycleCount(deps.client, auth.orgId, c.req.param("id")));
   });
 
   app.post("/api/v1/fulfillment/orders", zValidator("json", salesOrderSchema), async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "fulfillment:write");
+    const auth = c.get("auth");
     const body = c.req.valid("json");
     return c.json(createSalesOrder(deps.client, { orgId: auth.orgId, ...body }), 201);
   });
 
   app.post("/api/v1/fulfillment/orders/:id/allocate", async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "fulfillment:write");
+    const auth = c.get("auth");
     return c.json(allocateSalesOrder(deps.client, auth.orgId, c.req.param("id")));
   });
 
   app.post("/api/v1/fulfillment/orders/:id/ship", async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "fulfillment:write");
+    const auth = c.get("auth");
     return c.json(shipSalesOrder(deps.client, auth.orgId, c.req.param("id")));
   });
 
   app.put("/api/v1/stock/transfers/:id/receive", async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "stock:write");
+    const auth = c.get("auth");
     const transfer = receiveTransfer(deps.client, auth.orgId, c.req.param("id"));
     return c.json(transfer);
   });
 
   app.post("/api/v1/locations/bins", zValidator("json", locationSchema), async (c) => {
-    const auth = await authenticate(c, deps);
-    requirePermissionGuard(auth.role, "locations:write");
+    const auth = c.get("auth");
     const body = c.req.valid("json");
     if (body.kind !== "bin") {
       return c.json({ error: "This endpoint creates bins only" }, 400);
@@ -527,94 +510,4 @@ async function authenticate(
     throw new HttpError(401, "Unauthorized");
   }
   return { userId: user.id, orgId: user.orgId, role: user.role, sessionId: session.id };
-}
-
-function openApiDocument() {
-  return {
-    openapi: "3.1.0",
-    info: {
-      title: "koality-inventory",
-      version: "0.1.0",
-    },
-    paths: {
-      "/api/v1/auth/dev-login": { post: { summary: "Local dev login" } },
-      "/api/v1/auth/logout": { post: { summary: "Logout" } },
-      "/api/v1/items": {
-        get: { summary: "List items" },
-        post: { summary: "Create item", security: [{ bearerAuth: [] }] },
-      },
-      "/api/v1/items/{id}": { get: { summary: "Get item" } },
-      "/api/v1/items/{id}/skus": {
-        get: { summary: "List SKUs" },
-        post: { summary: "Create SKU", security: [{ bearerAuth: [] }] },
-      },
-      "/api/v1/locations/facilities": {
-        get: { summary: "List facilities" },
-        post: { summary: "Create facility", security: [{ bearerAuth: [] }] },
-      },
-      "/api/v1/locations/tree": { get: { summary: "Location tree" } },
-      "/api/v1/locations": {
-        post: { summary: "Create location node", security: [{ bearerAuth: [] }] },
-      },
-      "/api/v1/locations/bins": { post: { summary: "Create bin", security: [{ bearerAuth: [] }] } },
-      "/api/v1/stock/balances": { get: { summary: "Stock balances" } },
-      "/api/v1/stock/valuation": { get: { summary: "Stock valuation" } },
-      "/api/v1/stock/receipts": {
-        post: { summary: "Receive stock", security: [{ bearerAuth: [] }] },
-      },
-      "/api/v1/stock/adjustments": {
-        post: { summary: "Adjust stock", security: [{ bearerAuth: [] }] },
-      },
-      "/api/v1/stock/transfers": {
-        post: { summary: "Transfer stock", security: [{ bearerAuth: [] }] },
-      },
-      "/api/v1/stock/transfers/{id}/receive": {
-        put: { summary: "Receive transfer", security: [{ bearerAuth: [] }] },
-      },
-      "/api/v1/procurement/reorder-recommendations": {
-        get: { summary: "Reorder recommendations" },
-      },
-      "/api/v1/procurement/vendors": {
-        post: { summary: "Create vendor", security: [{ bearerAuth: [] }] },
-      },
-      "/api/v1/procurement/purchase-orders": {
-        post: { summary: "Create PO", security: [{ bearerAuth: [] }] },
-      },
-      "/api/v1/procurement/purchase-orders/{id}/approve": {
-        post: { summary: "Approve PO", security: [{ bearerAuth: [] }] },
-      },
-      "/api/v1/procurement/receipts": {
-        post: { summary: "Receive PO", security: [{ bearerAuth: [] }] },
-      },
-      "/api/v1/cycle-counts": {
-        post: { summary: "Start cycle count", security: [{ bearerAuth: [] }] },
-      },
-      "/api/v1/cycle-counts/{id}": { get: { summary: "Cycle count sheet" } },
-      "/api/v1/cycle-counts/record": {
-        post: { summary: "Record count", security: [{ bearerAuth: [] }] },
-      },
-      "/api/v1/cycle-counts/{id}/variance": { get: { summary: "Variance report" } },
-      "/api/v1/cycle-counts/{id}/reconcile": {
-        post: { summary: "Reconcile count", security: [{ bearerAuth: [] }] },
-      },
-      "/api/v1/fulfillment/orders": {
-        post: { summary: "Create SO", security: [{ bearerAuth: [] }] },
-      },
-      "/api/v1/fulfillment/orders/{id}/allocate": {
-        post: { summary: "Allocate SO", security: [{ bearerAuth: [] }] },
-      },
-      "/api/v1/fulfillment/orders/{id}/ship": {
-        post: { summary: "Ship SO", security: [{ bearerAuth: [] }] },
-      },
-    },
-    components: {
-      securitySchemes: {
-        bearerAuth: {
-          type: "http",
-          scheme: "bearer",
-          bearerFormat: "JWT",
-        },
-      },
-    },
-  };
 }

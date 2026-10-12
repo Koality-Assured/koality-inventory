@@ -15,6 +15,7 @@ export interface BootOptions {
   argv?: readonly string[];
   dbPath?: string;
   port?: number;
+  loginRateLimit?: { limit: number; windowMs: number };
 }
 
 export interface Booted {
@@ -42,6 +43,12 @@ export async function bootLocal(options: BootOptions): Promise<Booted> {
     client: opened.client,
     devAuth: dev.enabled,
     sessionSecret,
+    corsAllowedOrigins: (options.env.CORS_ALLOWED_ORIGINS ?? "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+    trustProxy: options.env.TRUST_PROXY === "true",
+    ...(options.loginRateLimit ? { loginRateLimit: options.loginRateLimit } : {}),
   });
   const requestedPort = options.port ?? (options.env.PORT ? Number(options.env.PORT) : 3000);
   const server = serve({

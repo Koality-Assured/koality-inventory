@@ -29,12 +29,12 @@ Whether deployed as a multi-facility enterprise SaaS backing thousands of real-t
 ```mermaid
 flowchart TD
     subgraph ClientLayer ["Client & Interaction Layer"]
-        HumanUI["Human Operators<br/>• React / Tailwind Web Dashboard<br/>• Mobile PWA Floor Scanner (Planned)"]
+        HumanUI["Human Operators<br/>• React / Tailwind Web Dashboard<br/>• Mobile PWA Floor Scanner (Roadmap)"]
         Agents["Autonomous AI Agents<br/>• Claude Desktop / Antigravity / Cursor<br/>• Autonomous Supply-Chain Workers"]
     end
 
     subgraph IntegrationLayer ["Integration & Transport Layer"]
-        Gateway["REST API Gateway (OpenAPI 3.1)<br/>• JSON / HTTPS Endpoints<br/>• Tenant Resolution & Rate Limiting"]
+        Gateway["REST API Gateway (OpenAPI 3.1)<br/>• JSON / HTTPS Endpoints<br/>• RBAC Guard, CORS Allowlist & Rate Limiting"]
         MCPServer["koality-inventory-mcp Server<br/>• stdio (Local Workstation)<br/>• Streamable HTTP (Enterprise SaaS)<br/>• Agent Bearer Scopes & HITL Guardrails"]
     end
 
@@ -43,7 +43,7 @@ flowchart TD
         Ledger["Double-Entry Stock Ledger<br/>• Multi-State ATP Calculations<br/>• Lot / Serial Tracking & Genealogies"]
         Ops["Warehouse Operations<br/>• Vendors & PO Receiving<br/>• Sales Order Allocation & Pick/Pack<br/>• Blind Cycle Counting Sessions"]
         Valuation["Financial Valuation & Rules<br/>• FIFO / Weighted Average Cost (WAC)<br/>• Dynamic Reorder Points (ROP)"]
-        AuthModule["Identity & Access Governance<br/>• SAML 2.0 / OIDC & SCIM 2.0 (Planned)<br/>• Fail-Closed Dev Flag (--dev)"]
+        AuthModule["Identity & Access Governance<br/>• SAML 2.0 / OIDC & SCIM 2.0 (Roadmap)<br/>• Fail-Closed Dev Flag (--dev)"]
     end
 
     subgraph StorageLayer ["Dual-Dialect Persistence Layer"]
@@ -93,7 +93,7 @@ All entities utilize millisecond-sortable, type-prefixed unique identifiers (`<p
 | `adj_` | Adjustment     | `adj_01jk8a01b2c3d4e5f6g7h8j9kd` | Ledger balance correction (variance, scrap, gain) |
 | `usr_` | User Identity  | `usr_01jk8a01b2c3d4e5f6g7h8j9ke` | Human operator account                            |
 | `agt_` | Agent Identity | `agt_01jk8a01b2c3d4e5f6g7h8j9kf` | Autonomous AI agent service token                 |
-| `aud_` | Audit Record   | `aud_01jk8a01b2c3d4e5f6g7h8j9kg` | Immutable hash-chained audit event                |
+| `aud_` | Audit Record   | `aud_01jk8a01b2c3d4e5f6g7h8j9kg` | Audit event (cryptographic hash chain: Roadmap)   |
 
 ### 2. Dual-Path Operating Model
 
@@ -102,12 +102,12 @@ Choose the deployment profile that fits your operational posture:
 | Capability           | Central SaaS / Hosted Mode                                    | Local Standalone / Dev Mode                               |
 | :------------------- | :------------------------------------------------------------ | :-------------------------------------------------------- |
 | **Target Use-Case**  | Multi-facility enterprise operations, teams                   | Workstation development, local AI agents, offline testing |
-| **Storage Engine**   | Clustered PostgreSQL with Row-Level Security (RLS) (Planned)  | Embedded SQLite (`~/.koality-inventory/stock.db`)         |
-| **Authentication**   | SAML 2.0 (Okta, Entra ID), OAuth 2.0 / OIDC (Planned)         | Local developer auth flag (`--dev`) with seeded accounts  |
-| **Directory Sync**   | SCIM 2.0 automated provisioning & deprovisioning (Planned)    | Pre-seeded development personas                           |
+| **Storage Engine**   | Clustered PostgreSQL with Row-Level Security (RLS) (Roadmap)  | Embedded SQLite (`~/.koality-inventory/stock.db`)         |
+| **Authentication**   | SAML 2.0 (Okta, Entra ID), OAuth 2.0 / OIDC (Roadmap)         | Local developer auth flag (`--dev`) with seeded accounts  |
+| **Directory Sync**   | SCIM 2.0 automated provisioning & deprovisioning (Roadmap)    | Pre-seeded development personas                           |
 | **MCP Protocol**     | Remote Streamable HTTP with scoped Bearer tokens              | Direct `stdio` IPC pipe or `localhost:3000` loopback      |
 | **Cloud Dependency** | Connected infrastructure (Redis, S3, OIDC IdP)                | **Zero** cloud dependencies, 100% offline                 |
-| **Audit Trails**     | Append-only ledger with cryptographic hash chaining (Planned) | Local SQLite transaction audit records                    |
+| **Audit Trails**     | Append-only ledger with cryptographic hash chaining (Roadmap) | Local SQLite transaction audit records                    |
 
 ### 3. Multi-Location Hierarchical Topology
 
@@ -203,6 +203,30 @@ When started in `--dev` mode, the following seeded personas are available for in
 | `clerk@koalityinventory.local`      | `dev-clerk-password-123`      | `PickingClerk`        | Stock picking, bin movements, physical count entry |
 
 > **Security Note:** In production (`NODE_ENV=production`), dev auth fails closed and is completely rejected unless `DEV_OVERRIDE_KEY` and `SESSION_SECRET` are explicitly configured.
+
+---
+
+## API Security Model
+
+Implemented and covered by tests (`apps/api/src/rbac.test.ts`):
+
+- **Deny-by-default RBAC.** Every `/api/*` route needs an entry in the central `ROUTE_POLICIES` map (`apps/api/src/rbac.ts`). Missing/invalid session returns `401`; a role without the required permission, or a route absent from the map, returns `403` JSON.
+- **CORS is off by default.** Only exact origins listed in `CORS_ALLOWED_ORIGINS` (comma-separated) receive CORS headers. The Vite dev server proxies `/api`, so no CORS configuration is needed locally.
+- **Rate limiting.** 5 login attempts per minute per client and a global per-client API limit; responses are `429` with `Retry-After`. `X-Forwarded-For` is honoured only when `TRUST_PROXY=true` (set it only behind a trusted proxy). Counters are in-memory and per process.
+- **OpenAPI 3.1** at `/openapi.json` is generated from the same policy map (security, required permission, request schemas, 4xx responses).
+
+## Roadmap (not yet built)
+
+These capabilities are described in the architecture above but **are not implemented** in this repository:
+
+| Capability                              | Status  |
+| :-------------------------------------- | :------ |
+| PostgreSQL Row-Level Security (RLS)     | Roadmap |
+| SAML 2.0 / OIDC single sign-on          | Roadmap |
+| SCIM 2.0 provisioning                   | Roadmap |
+| Audit-log cryptographic hash chaining   | Roadmap |
+| Mobile PWA floor scanner                | Roadmap |
+| Shared (multi-process) rate-limit store | Roadmap |
 
 ---
 
