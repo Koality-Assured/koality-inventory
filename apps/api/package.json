@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.19.5",
-    "@hono/zod-validator": "^0.7.4",
+    "@hono/zod-validator": "^0.9.1",
     "@koality-inventory/db": "0.1.0",
     "@koality-inventory/ids": "0.1.0",
     "hash-wasm": "^4.12.0",
