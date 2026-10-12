@@ -29,7 +29,7 @@ Whether deployed as a multi-facility enterprise SaaS backing thousands of real-t
 ```mermaid
 flowchart TD
     subgraph ClientLayer ["Client & Interaction Layer"]
-        HumanUI["Human Operators<br/>• React / Tailwind Web Dashboard<br/>• Mobile PWA Floor Scanner"]
+        HumanUI["Human Operators<br/>• React / Tailwind Web Dashboard<br/>• Mobile PWA Floor Scanner (Planned)"]
         Agents["Autonomous AI Agents<br/>• Claude Desktop / Antigravity / Cursor<br/>• Autonomous Supply-Chain Workers"]
     end
 
@@ -43,11 +43,11 @@ flowchart TD
         Ledger["Double-Entry Stock Ledger<br/>• Multi-State ATP Calculations<br/>• Lot / Serial Tracking & Genealogies"]
         Ops["Warehouse Operations<br/>• Vendors & PO Receiving<br/>• Sales Order Allocation & Pick/Pack<br/>• Blind Cycle Counting Sessions"]
         Valuation["Financial Valuation & Rules<br/>• FIFO / Weighted Average Cost (WAC)<br/>• Dynamic Reorder Points (ROP)"]
-        AuthModule["Identity & Access Governance<br/>• SAML 2.0 / OIDC & SCIM 2.0<br/>• Fail-Closed Dev Flag (--dev)"]
+        AuthModule["Identity & Access Governance<br/>• SAML 2.0 / OIDC & SCIM 2.0 (Planned)<br/>• Fail-Closed Dev Flag (--dev)"]
     end
 
     subgraph StorageLayer ["Dual-Dialect Persistence Layer"]
-        PG["Central Hosted Mode<br/>• Clustered PostgreSQL<br/>• Row-Level Security (RLS)<br/>• PGlite (CI Dry-Run)"]
+        PG["Central Hosted Mode<br/>• Clustered PostgreSQL<br/>• Row-Level Security (RLS) (Roadmap)<br/>• PGlite (CI Dry-Run)"]
         SQLite["Local Standalone Mode<br/>• Embedded node:sqlite (~/.koality-inventory/stock.db)<br/>• 100% Offline & Zero Cloud Dependencies"]
     end
 
@@ -99,15 +99,15 @@ All entities utilize millisecond-sortable, type-prefixed unique identifiers (`<p
 
 Choose the deployment profile that fits your operational posture:
 
-| Capability           | Central SaaS / Hosted Mode                          | Local Standalone / Dev Mode                               |
-| :------------------- | :-------------------------------------------------- | :-------------------------------------------------------- |
-| **Target Use-Case**  | Multi-facility enterprise operations, teams         | Workstation development, local AI agents, offline testing |
-| **Storage Engine**   | Clustered PostgreSQL with Row-Level Security (RLS)  | Embedded SQLite (`~/.koality-inventory/stock.db`)         |
-| **Authentication**   | SAML 2.0 (Okta, Entra ID), OAuth 2.0 / OIDC         | Local developer auth flag (`--dev`) with seeded accounts  |
-| **Directory Sync**   | SCIM 2.0 automated provisioning & deprovisioning    | Pre-seeded development personas                           |
-| **MCP Protocol**     | Remote Streamable HTTP with scoped Bearer tokens    | Direct `stdio` IPC pipe or `localhost:3000` loopback      |
-| **Cloud Dependency** | Connected infrastructure (Redis, S3, OIDC IdP)      | **Zero** cloud dependencies, 100% offline                 |
-| **Audit Trails**     | Append-only ledger with cryptographic hash chaining | Local SQLite transaction audit records                    |
+| Capability           | Central SaaS / Hosted Mode                                    | Local Standalone / Dev Mode                               |
+| :------------------- | :------------------------------------------------------------ | :-------------------------------------------------------- |
+| **Target Use-Case**  | Multi-facility enterprise operations, teams                   | Workstation development, local AI agents, offline testing |
+| **Storage Engine**   | Clustered PostgreSQL with Row-Level Security (RLS) (Planned)  | Embedded SQLite (`~/.koality-inventory/stock.db`)         |
+| **Authentication**   | SAML 2.0 (Okta, Entra ID), OAuth 2.0 / OIDC (Planned)         | Local developer auth flag (`--dev`) with seeded accounts  |
+| **Directory Sync**   | SCIM 2.0 automated provisioning & deprovisioning (Planned)    | Pre-seeded development personas                           |
+| **MCP Protocol**     | Remote Streamable HTTP with scoped Bearer tokens              | Direct `stdio` IPC pipe or `localhost:3000` loopback      |
+| **Cloud Dependency** | Connected infrastructure (Redis, S3, OIDC IdP)                | **Zero** cloud dependencies, 100% offline                 |
+| **Audit Trails**     | Append-only ledger with cryptographic hash chaining (Planned) | Local SQLite transaction audit records                    |
 
 ### 3. Multi-Location Hierarchical Topology
 
